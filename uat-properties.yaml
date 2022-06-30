@@ -1,0 +1,59 @@
+http:
+  private:
+    host: "0.0.0.0"
+    port: "8091"
+
+maptAPI:
+  basePath: "interop/rest/11.1.2.3.600"
+  path: "/applicationsnapshots/MDMSiteDataMDMUpdate_2021-07-28T15-38-10-64@MetaData_Site@Actual@2019_01@RA.csv/contents?extDirPath=inbox%5Cbatches%5Copenbatch%5COB_MDM_Site_Update%5C"
+  dailycontracts_path: "/applicationsnapshots/Daily Contract Information.CSV/contents"
+  host: "planning-test-a601519.pbcs.em3.oraclecloud.com"
+  port: "443"
+  username: "a601519.INTERGRATION_TEST"
+  password: "QWDkaasncis@7391caasp"
+    
+
+ 
+mq:
+  url: "https://mq-us-east-1.anypoint.mulesoft.com/api/v1"
+  clientId: "6641e2d58aea463699120ad45a5e30e4"
+  clientSecret: "5B2e26bF88174A51ae0a7B78955f9A46"
+  queue: "mdm-site-mapt-queue-uat"
+  errorqueue: "mdm-site-mapt-error-queue-uat"
+  retryqueue: "mdm-site-mapt-retry-queue-uat"
+  maxRetryAttempt: "5"
+  ackTimeout: "10"
+  ##### Timeout connection and response in ms ###########
+  timeout:
+    connection: "30000"
+  ########## reconenct frequency ##########################
+  reconnect:
+    frequency: "2000"
+    attempts: "2"
+    
+subscriber:
+  main:
+    maxConcurrency: "1"
+    maxLocalMessages: "30"
+
+  retry:
+    maxConcurrency: "1"
+    maxLocalMessages: "5"
+    
+errorNotifMQ:
+  standardQueue: "common-email-alert-queue-dev"
+  clientId: "8c257bb5f1034e698612242f38cc3736"
+  clientSecret: "![qupssn8JjUVNgIQkEnRL0otOzSRdKxUHYXM1H+PzEjeSGMVWU2NDJg==]"
+  url: "https://mq-us-east-1.anypoint.mulesoft.com/api/v1"
+email:
+  to: "Divya.Roshin@shell.com;Suman.Bhogi@shell.com;Krishnaveni.Linga@shell.com"    
+
+  
+objectStore:
+#objectStore configurations in Minutes
+  entryTtl: "120"
+  expirationInterval: "20"
+  
+aggregateForEach:
+  batchSize: "15000"       
+

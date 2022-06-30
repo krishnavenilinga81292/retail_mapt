@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:file="http://www.mulesoft.org/schema/mule/file"
+	xmlns:os="http://www.mulesoft.org/schema/mule/os"
+	xmlns:oauth="http://www.mulesoft.org/schema/mule/oauth" xmlns:secure-properties="http://www.mulesoft.org/schema/mule/secure-properties"
+	xmlns:anypoint-mq="http://www.mulesoft.org/schema/mule/anypoint-mq"
+	xmlns:tls="http://www.mulesoft.org/schema/mule/tls" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/tls http://www.mulesoft.org/schema/mule/tls/current/mule-tls.xsd 
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/anypoint-mq http://www.mulesoft.org/schema/mule/anypoint-mq/current/mule-anypoint-mq.xsd
+http://www.mulesoft.org/schema/mule/secure-properties http://www.mulesoft.org/schema/mule/secure-properties/current/mule-secure-properties.xsd
+http://www.mulesoft.org/schema/mule/oauth http://www.mulesoft.org/schema/mule/oauth/current/mule-oauth.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd">
+	<import doc:name="Import" doc:id="0e28849d-1c41-43e6-b4e2-05e43e8450be" file="common-logging-framework.xml" />
+	<import doc:name="Import" doc:id="523c1473-eca1-46f4-9885-61516721f8f4" file="common-error-handling-framework.xml" />
+	<configuration-properties doc:name="Configuration properties" doc:id="2fb7da92-b68b-4201-8e5c-6f6dbf737db3" file="properties/${mule.env}-properties.yaml" />
+	<anypoint-mq:config name="proc-mobility-mapt-sites-app-anypoint-mq-config" doc:name="Anypoint MQ Config" doc:id="09ae7f40-3014-452e-a19d-af392b943a3c" >
+		<anypoint-mq:connection clientId="${mq.clientId}" clientSecret="${mq.clientSecret}" url="${mq.url}">
+		</anypoint-mq:connection>
+	</anypoint-mq:config>
+	<http:request-config name="mapt-http-request-config" doc:name="HTTP Request configuration" doc:id="ba779ed3-582a-4a13-af8a-2ac77622937b" basePath="${maptAPI.basePath}">
+		<http:request-connection host="${maptAPI.host}" port="${maptAPI.port}" protocol="HTTPS">
+			<tls:context >
+				<tls:trust-store insecure="true" />
+			</tls:context>
+			<http:authentication >
+				<http:basic-authentication username="${maptAPI.username}" password="${maptAPI.password}"/>
+			</http:authentication>
+		
+</http:request-connection>
+	</http:request-config>
+	<os:object-store name="globalSiteIdObjectStore" doc:name="Object store" doc:id="973370c4-a7ba-4418-b944-5bf01be4b4dc"/>
+	<http:listener-config name="proc-mobility-cap-sites-app-HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="aa914031-27c6-4a73-98dc-ac092d68d8d2" >
+		<http:listener-connection host="0.0.0.0" port="8091" />
+	</http:listener-config>
+	<secure-properties:config name="Secure_Properties_Config" doc:name="Secure Properties Config" doc:id="eecaa681-fcaf-49b7-be07-661f7cdc6f9f" file="properties/${mule.env}-properties.yaml" key="${mule.secureKey}">
+		<secure-properties:encrypt algorithm="Blowfish" />
+	</secure-properties:config>
+	<anypoint-mq:config name="errornotif-queue-anypoint-mq-config" doc:name="Anypoint MQ Config" doc:id="b4754370-be3c-44b8-a5ca-0463ad86c700" >
+		<anypoint-mq:connection url="${errorNotifMQ.url}" clientId="${errorNotifMQ.clientId}" clientSecret="${secure::errorNotifMQ.clientSecret}"/>
+	</anypoint-mq:config>
+	<anypoint-mq:config name="proc-mobility-mapt-sites-error-queue-anypoint-mq-config" doc:name="Anypoint MQ Config" doc:id="44d5bc60-7cd5-4d02-bf8f-b6294a3d9c29" >
+		<anypoint-mq:connection url="${mq.errorqueue.url}" clientId="${mq.errorqueue.clientId}" clientSecret="${mq.errorqueue.clientSecret}"/>
+	</anypoint-mq:config>
+
+</mule>

@@ -1,0 +1,607 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:aggregators="http://www.mulesoft.org/schema/mule/aggregators"
+	xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:batch="http://www.mulesoft.org/schema/mule/batch"
+	xmlns:os="http://www.mulesoft.org/schema/mule/os"
+	xmlns:anypoint-mq="http://www.mulesoft.org/schema/mule/anypoint-mq" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/anypoint-mq http://www.mulesoft.org/schema/mule/anypoint-mq/current/mule-anypoint-mq.xsd
+http://www.mulesoft.org/schema/mule/os http://www.mulesoft.org/schema/mule/os/current/mule-os.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/aggregators http://www.mulesoft.org/schema/mule/aggregators/current/mule-aggregators.xsd">
+	
+	<flow name="proc-mobility-mapt-sites-app-flow" doc:id="2aa1f36d-3047-4399-8ee8-8aef3ca2da60" maxConcurrency="${subscriber.main.maxConcurrency}">
+<anypoint-mq:subscriber doc:name="subscribe-mapt-data" doc:id="da933e30-2f70-4f58-9a12-2380b4b0477d" destination="${mq.queue}" acknowledgementMode="MANUAL" acknowledgementTimeout="${mq.ackTimeout}" acknowledgementTimeoutUnit="MINUTES" config-ref="proc-mobility-mapt-sites-app-anypoint-mq-config">
+			<reconnect frequency="${mq.reconnect.frequency}" count="${mq.reconnect.attempts}" />
+			<anypoint-mq:subscriber-type >
+				<anypoint-mq:prefetch maxLocalMessages="${subscriber.main.maxLocalMessages}" />
+			</anypoint-mq:subscriber-type>
+		</anypoint-mq:subscriber>
+
+ 
+
+<flow-ref doc:name="log-request-received" doc:id="27809ccf-ff5b-4a53-a98a-361cf1c4dd95" name="log-request-received"/>
+		<ee:transform doc:name="set-variables" doc:id="3d2059a0-00b5-4ff2-8d59-591d7a0f17d9" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="CAPSystems" ><![CDATA[%dw 2.0
+output application/java
+
+---
+if (attributes.properties.capSystems != null)
+(attributes.properties.capSystems splitBy ",") filter ((value) -> value == "MAPT")
+else "NoCAP"]]></ee:set-variable>
+				<ee:set-variable variableName="ackToken" ><![CDATA[%dw 2.0
+output application/java
+---
+attributes.ackToken]]></ee:set-variable>
+				<ee:set-variable variableName="globalSiteId" ><![CDATA[%dw 2.0
+output application/json
+---
+payload.globalSiteId]]></ee:set-variable>
+				<ee:set-variable variableName="mdmDataRetrievalTime" ><![CDATA[%dw 2.0
+output application/java
+---
+attributes.properties.mdmDataRetrievalTime default (now() as DateTime {format: "yyyy-MM-dd'T'HH:mm:ss.SSS"} >> "GMT")]]></ee:set-variable>
+				<ee:set-variable variableName="requestPayload" ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-variable>
+				<ee:set-variable variableName="additionalLogInfo" ><![CDATA["globalSiteId: " ++ payload.globalSiteId]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<choice doc:name="Validate capSystem" doc:id="1d3f069f-45d1-4191-bdb8-1574780c689f">
+			<when expression='#[!isEmpty(vars.CAPSystems[0]) or vars.CAPSystems == "NoCAP"]'>
+				<choice doc:name="Choice" doc:id="c05d2abe-f75a-4eb0-b6ef-792b6a6e9917" >
+					<when expression='#[(payload.operatingPlatformCd.operatingPlatformCd == "0" and payload.siteStatusCd.siteStatusName == "Active")]'>
+						<flow-ref doc:name="proc-mobility-mapt-sites-app-storing-data-flow" doc:id="6158fe76-dcce-47ca-8c4e-c5e3d4fcdb5d" name="proc-mapt-sites-app-storing-data-flow" />
+					</when>
+					<otherwise >
+						<ee:transform doc:name="Transform Message" doc:id="2f8e29b6-4c80-4c69-8ffc-6ffce4583fb5" >
+							<ee:message >
+								<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	message:"message is not satisified with the filter condition"
+	
+}]]></ee:set-payload>
+							</ee:message>
+						</ee:transform>
+						<anypoint-mq:ack doc:name="Ack" doc:id="543ed4bd-04e9-431f-8a4d-392c5de18c28" config-ref="proc-mobility-mapt-sites-app-anypoint-mq-config" ackToken="#[vars.ackToken]"/>
+					</otherwise>
+				</choice>
+			</when>
+			<otherwise>
+				<ee:transform doc:name="Invalid capSystems" doc:id="52c45f3c-0717-4049-a36c-ee6eb4861b20">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	message:"message is not required by MAPT capSystems"
+	
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<anypoint-mq:ack doc:name="Ack" doc:id="17f8ee6d-9e8d-4c88-8be9-456614d2514b" config-ref="proc-mobility-mapt-sites-app-anypoint-mq-config" ackToken="#[vars.ackToken]"/>
+			</otherwise>
+		</choice>
+		
+		<remove-variable doc:name="remove-additionalLogInfo" doc:id="d27a4001-0bc4-4db5-bc13-2487b1ab0ced" variableName="additionalLogInfo" />
+		<flow-ref doc:name="log-response-returned" doc:id="367e81b5-c3e8-47e9-8cf5-740d97040596" name="log-response-returned"/>
+		<error-handler >
+			<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="21ac7e74-73cb-484d-a27d-1f793541376e" type="ANY">
+				<ee:transform doc:name="error-payload" doc:id="2423b730-b0e8-4481-bd95-e31783841744" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/java
+---
+payload]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<set-variable value="#[attributes.ackToken]" doc:name="Set ackToken" doc:id="2f61b4c0-608d-4566-b06d-5fe901546298" variableName="ackToken"/>
+				<logger level="INFO" doc:name="Logger" doc:id="d1dc22c8-8997-4130-afd4-10a745814062" />
+				<anypoint-mq:nack doc:name="Nack" doc:id="c593b9c8-ad13-400b-989e-09cb9cac6e48" config-ref="proc-mobility-mapt-sites-app-anypoint-mq-config" ackToken="#[vars.actToken]"/>
+			</on-error-propagate>
+		</error-handler>
+
+
+</flow>
+
+	<flow name="dataFlow" doc:id="84c97ba6-3b0b-4b88-a292-556a43ef6d04" >
+		<http:listener doc:name="Listener" doc:id="0d75422f-0e19-4909-88f4-b5fb0b965a8d" config-ref="proc-mobility-cap-sites-app-HTTP_Listener_config" path="/publish"/>
+		<foreach doc:name="For Each" doc:id="77128584-cdea-4e35-8ccb-ebf800f2c873" collection="#[1 to 7000]">
+			<ee:transform doc:name="Transform Message" doc:id="ed489089-4152-4a8f-af51-8f43457a0edc">
+			<ee:message>
+					<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"rowidObject": "410047",
+	"label": "KOMAROVA 1",
+	"mrnStatusName": "Open",
+	"salesOrgCd": "UA01",
+	"siteFrontage": "39",
+	"siteName": "KOMAROVA 1",
+	"longitude": "30.408502",
+	"mrnStatusCd": "01",
+	"latitude": "50.435619",
+	"visibilityScore": "2",
+	"siteLocationScore": "18",
+	"shellNonPublicSite": "N",
+	"siteOpeningDate": "2010-07-01T00:00:00Z",
+	"operatorMasterEmail": "10057883@sitemdmqa.com",
+	"loyaltyProgramInd": "Y",
+	"siteSizeArea": "833",
+	"siteDepth": "23",
+	"companyCd": "UA01",
+	"differentiator": "99",
+	"postalCode": "01001",
+	"shopBuildingSize": "33",
+	"siteScore": "8",
+	"buyingAreaScore": "8",
+	"countEvChargePosts": "0",
+	"globalSiteId": randomInt(1000000) as String {format:"########"},
+
+
+	"beLastUpdateDt": "2021-07-15T07:44:50Z",
+	"shipToDeleteInd": "0",
+	"fpsInd": "Y",
+	"trafficFlowScore": "10",
+	"salesOfficeCd": "U001",
+	"highestEvChargeRate": "0",
+	"customerAccountGroup": "YSHP",
+	"accessibilityScore": "6",
+	"streetAddress": "Kiev City, Av. Komarov, 42",
+	"telephoneNo": "380672142287",
+	"cityName": "Kiev2",
+	"operatingPlatformCd": {
+		"rowidObject": "17            ",
+		"label": "Lookup Operating Plateform",
+		"isActive": "1",
+		"retailerPlateformCd": "0   ",
+		"operatingPlatformCd": "0",
+		"operatingPlatformName": "COCO Local",
+		"operatingPlatformDesc": "Not Specified"
+	},
+
+
+	"siteTypeCd": {
+		"rowidObject": "2             ",
+		"label": "Site Type",
+		"siteTypeCd": "2",
+		"siteTypeName": "Shell In Network Retail Site",
+		"shellNetInOutInd": "Y"
+	},
+	"operatingPlatformCode": {
+		"rowidObject": "17            ",
+		"label": "Lookup Operating Plateform",
+		"isActive": "1",
+		"retailerPlateformCd": "0   ",
+		"operatingPlatformCd": "4",
+		"operatingPlatformName": "COCO Local",
+		"operatingPlatformDesc": "Not Specified"
+	},
+
+
+
+	"countryCd": {
+		"rowidObject": "76            ",
+		"label": "Lookup Country",
+		"countryName": "Ukraine",
+		"countryCd": "UA"
+	},
+	"siteStatusCd": {
+		"rowidObject": "2             ",
+		"label": "LookupSiteStatus",
+		"siteStatusName": "Active",
+		"isActive": "1",
+		"siteStatusLongDesc": "Active",
+		"siteStatusCd": "1"
+	},
+	"SiteRetailer": {
+		"link": [],
+		"firstRecord": 1,
+		"pageSize": 100,
+		"searchToken": "multi",
+		"item": [{
+				"rowidObject": "220257        ",
+				"label": "Site Retailer",
+				"retailerRowid": "220034        ",
+				"customerStartDate": "2012-01-01T00:00:00Z",
+				"customerEndDate": "2012-03-31T00:00:00Z",
+				"deleteInd": "N",
+				"Retailer": {
+					"rowidObject": "220034        ",
+					"label": "Retailer",
+					"streetAddress": "N/A",
+					"cityName": "N/A",
+					"customerName": "SITARCHUK OLEKSANDR",
+					"customerNo": "01388",
+					"deleteInd": "N",
+					"countryCd": {
+						"rowidObject": "76            ",
+						"label": "Lookup Country",
+						"countryName": "Ukraine",
+						"countryCd": "UA"
+					}
+				}
+			}
+
+		]
+
+	}
+}]]></ee:set-payload>
+			</ee:message>
+			<ee:variables>
+			</ee:variables>
+		</ee:transform>
+			<anypoint-mq:publish doc:name="Publish" doc:id="e9217e2f-de9a-43e3-9ba0-c0e7ee3d3876" destination="${mq.queue}" deliveryDelayUnit="MINUTES" config-ref="proc-mobility-mapt-sites-app-anypoint-mq-config">
+			<anypoint-mq:properties><![CDATA[#[output application/java
+---
+{
+	"mdmDataRetrievalTime" : now() as DateTime {format: "yyyy-MM-dd'T'HH:mm:ss.SSS"} >> "GMT",
+	"capSystems": "MAPT,xyz,abc"
+	
+}]]]></anypoint-mq:properties>
+		</anypoint-mq:publish>
+		</foreach>
+		<logger level="INFO" doc:name="Logger" doc:id="b22ed517-9f53-4120-a33e-476f341f8b95" message='#["message published"]'/>
+	
+</flow>
+	<flow name="proc-mobility-mapt-sites-app-aggregated-flow" doc:id="7343ff0a-80b9-4c23-8987-5601931a81e7">
+		<scheduler doc:name="Scheduler" doc:id="1d643fea-e2d6-4b99-9ac7-dd391db47c31" >
+			<scheduling-strategy >
+				<fixed-frequency frequency="1" timeUnit="HOURS"/>
+			</scheduling-strategy>
+		</scheduler>
+		<flow-ref doc:name="log-request-received" doc:id="e817fe8b-d2a1-4a4a-851d-2fc1f2ddb42a" name="log-request-received"/>
+		<ee:transform doc:name="Transform Message" doc:id="3b890a35-8f5e-4197-b44a-fcdd8565bd54" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="additionalLogEmailInfo" ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	"To": p('email.to'),
+	"fromEmail": app.name ++ "-noreply@shell.com",
+	"Env": p('mule.env')
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<logger level="TRACE" doc:name="Logger" doc:id="6d75ca1a-ce8e-4667-a673-c663c2e32cf4" message="#[&quot;Scheduler started &quot; ++ &quot;-&quot; ++ now() as DateTime {format: &quot;yyyy-MM-dd'T'HH:mm:ss.SSS&quot;} ++ &quot;UTC time is&quot; ++ now() as DateTime {format: &quot;yyyy-MM-dd'T'HH:mm:ss.SSS&quot;} &gt;&gt; &quot;GMT&quot;]" />
+		<try doc:name="Try" doc:id="140d77d5-0ee9-4e69-83a3-380ecc5bf3e5" >
+			<until-successful maxRetries="5" doc:name="Until Successful" doc:id="904d0e53-e89e-4ddd-ab3a-69655b49fd19" millisBetweenRetries="30000">
+				<os:retrieve-all doc:name="Retrieve-all-mapt-data" doc:id="320694e8-a868-449b-86e8-ec1ae466a601" objectStore="globalSiteIdObjectStore" />
+			</until-successful>
+			<error-handler >
+				<on-error-propagate enableNotifications="true" logException="true" doc:name="On Error Propagate" doc:id="d956007c-fe09-401a-987a-66bf5f30c763" type="ANY">
+					<ee:transform doc:name="Transform Message" doc:id="4c2d8519-dceb-46f7-99ea-3cf03277e187" >
+						<ee:message >
+							<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+message:"Invalid os-data"]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
+				</on-error-propagate>
+			</error-handler>
+		</try>
+		<logger level="INFO" doc:name="Logger" doc:id="77b27c2b-e41b-47ff-903b-2f009494d654" message='#["Total records after retrieved" : sizeOf(payload)]' />
+		<choice doc:name="Choice" doc:id="81ff1b39-94f2-4008-8e3c-61cce101d00e" >
+			<when expression='#[payload[0] != null]'>
+<try doc:name="Try" doc:id="8bfb3d10-8ea5-4b5a-b064-4ccdabc6e1f0" >
+					<ee:transform doc:name="set-mapt-payload" doc:id="2e10a703-00bb-4c5b-94ff-b3b56bb88372">
+<ee:message>
+				<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload pluck(item)->{
+data:read(item)
+}]]></ee:set-payload>
+
+</ee:message>
+<ee:variables>
+				<ee:set-variable variableName="osKeys"><![CDATA[keysOf(payload)]]></ee:set-variable>
+
+</ee:variables>
+</ee:transform>
+					<logger level="INFO" doc:name="Logger" doc:id="a0f5f326-08f1-42b3-9d46-1bb1b06bec7c" message="Complete Plunk payload" />
+					<ee:transform doc:name="remove-mdm-retrieval-time" doc:id="72cfcba1-16af-4d3c-b105-1a75b79a6ffa">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+payload.data map (item) -> {
+ GLOBAL_SITE_ID:item.GLOBAL_SITE_ID,
+ SITE_NAME:item.SITE_NAME,
+ SITE_SHORT_NAME:item.SITE_SHORT_NAME,
+ SITE_OPENING_DATE:item.SITE_OPENING_DATE,
+ SITE_CLOSING_DATE:item.SITE_CLOSING_DATE,
+ SITE_FRONTAGE:item.SITE_FRONTAGE,
+ SITE_DEPTH:item.SITE_DEPTH,
+ SITE_SIZE_AREA:item.SITE_SIZE_AREA,
+ SHOP_BUILDING_SIZE:item.SHOP_BUILDING_SIZE,
+ SHOP_SELLING_SPACE_SIZE:item.SHOP_SELLING_SPACE_SIZE,
+ CITY_NAME:item.CITY_NAME,
+ LONGITUDE:item.LONGITUDE,
+ LATITUDE:item.LATITUDE,
+ STREET_ADDRESS:item.STREET_ADDRESS,
+ POSTAL_CODE:item.POSTAL_CODE,
+ VISIBILITY_SCORE:item.VISIBILITY_SCORE,
+ ACCESSIBILITY_SCORE:item.ACCESSIBILITY_SCORE,
+ SITE_SCORE:item.SITE_SCORE,
+ TRAFFIC_FLOW_SCORE:item.TRAFFIC_FLOW_SCORE,
+ BUYING_AREA_SCORE:item.BUYING_AREA_SCORE,
+ SITE_LOCATION_SCORE:item.SITE_LOCATION_SCORE,
+ COUNTRY_CODE:item.COUNTRY_CODE,
+ BUSINESS_CUSTOMER_NUMBER:item.BUSINESS_CUSTOMER_NUMBER,
+ BUSINESS_CUSTOMER_NAME:item.BUSINESS_CUSTOMER_NAME,
+ SITE_STATUS_NAME:item.SITE_STATUS_NAME,
+ OPERATING_PLATFORM_NAME:item.OPERATING_PLATFORM_NAME
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+					<error-handler >
+						<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="64e26eb8-0618-4432-bdba-eb0353f84708" type="ANY">
+							<set-variable value='#["true"]' doc:name="Set Variable" doc:id="c3095f7d-7a11-41e4-b668-fc8d69605c02" variableName="mapError"/>
+						</on-error-continue>
+					</error-handler>
+				</try>
+				<choice doc:name="Choice" doc:id="7231f096-67f2-415d-b8d9-e86bc412d895">
+					<when expression='#[vars.mapError == "false" or vars.mapError == null]'>
+						<logger level="INFO" doc:name="Logger" doc:id="c27a27ae-559e-4182-b301-ae1e12315f6d" message="Remove mdmretrivaltime time" />
+						<flow-ref doc:name="mdm-site-mapt-data-aggregarte-folw" doc:id="0286014d-778f-4de9-a2bc-1b853ee86a99" name="mdm-site-mapt-data-aggregarte-folw" />
+						<flow-ref doc:name="mdm-site-mapt-data-removeskeys-folw" doc:id="cf1cc8c9-a521-4a38-b1f6-9718b599090a" name="proc-mobility-mapt-sites-app-removekeys-flow" targetValue="#[vars.osKeys]" />
+						<logger level="INFO" doc:name="Logger" doc:id="4ba00240-8935-4e6e-9425-65d7482ee24f" message='"Successfully file inserted in to MAPT"' />
+					</when>
+					<otherwise >
+						<logger level="INFO" doc:name="Logger" doc:id="3380f213-4333-4bff-a4b3-33bc235250c7" message="Reporcess the scheduler again"/>
+					</otherwise>
+				</choice> 
+			</when>
+			<otherwise >
+				<ee:transform doc:name="Transform Message" doc:id="9eef9145-0c86-486b-9645-dd60fca493d2" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+message: "No records for aggregation"]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</otherwise>
+		</choice>
+		<flow-ref doc:name="log-response-returned" doc:id="281fbb6c-e023-4bfb-948b-3de7706f6ab0" name="log-response-returned"/>
+		<error-handler >
+			<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="b786f53a-6aaf-4341-aedd-2fb09428233d" type="ANY">
+				<ee:transform doc:name="Transform Message" doc:id="48a2b10c-bd39-481b-b214-68b32d6fcf1c">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"errorDescription" : error.detailedDescription
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+			</on-error-continue>
+		</error-handler>
+		
+
+
+
+</flow>
+	<flow name="proc-mobility-mapt-sites-errorqueue-Flow" doc:id="5e09dc2e-3407-43b9-a792-46dd7dbe67d8" maxConcurrency="${subscriber.main.maxConcurrency}" initialState="stopped">
+		<anypoint-mq:subscriber doc:name="Subscriber" doc:id="4ed7edf4-8171-402e-abe5-fc0eaa399dda" config-ref="proc-mobility-mapt-sites-error-queue-anypoint-mq-config" destination="${mq.errorqueue.queue}" acknowledgementTimeout="${mq.ackTimeout}" acknowledgementTimeoutUnit="MINUTES" acknowledgementMode="MANUAL">
+		</anypoint-mq:subscriber>
+		<flow-ref doc:name="log-request-received" doc:id="758d4c1b-f143-4e53-9b1f-801419566eb4" name="log-request-received"/>
+		<logger level="INFO" doc:name="log-inupt" doc:id="819cf0bc-a348-4fab-a906-2c3cc6d5169c" message="#[%dw 2.0
+output application/json
+---
+{
+	retryProcessing: payload,
+	correlationId: correlationId
+}]"/>
+		<set-variable value="#[%dw 2.0
+output application/java
+---
+attributes.ackToken]" doc:name="Set Variable" doc:id="757c5f7d-a0de-4573-a455-9ac2bb4385fa" variableName="ackToken"/>
+		<choice doc:name="Choice" doc:id="1b43cd78-30ef-436f-a6ee-5dc234dfa657" >
+			<when expression="#[attributes.properties.updatefileName != null]">
+				<try doc:name="Try" doc:id="e59d7d26-fc42-4b57-9284-d72b20b701cb" >
+					<http:request method="POST" doc:name="mapt-createCSV-request" doc:id="b2ad9eb6-e699-4c9c-8917-71d7cf0a3a51" config-ref="mapt-http-request-config" path="#[attributes.properties.updatefileName]">
+<http:headers><![CDATA[#[output application/java
+---
+{
+"Content-Type" : "application/octet-stream"
+}]]]></http:headers>
+</http:request>
+					<ee:transform doc:name="Transform Message" doc:id="a1df9e45-6081-43fc-9c45-a50d7d89d2ea" >
+						<ee:message >
+							<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"fromEmail": vars.additionalLogEmailInfo.fromEmail,
+	"toEmail": vars.additionalLogEmailInfo.To,
+	"subject": upper(vars.additionalLogEmailInfo.Env) ++ "- MuleSoft Notification- " ++ app.name ++ " MAPT update",
+	"emailBody": "<p>Dear Users,</p><p>Successfully created the data after retrieved from error queue.</p><p>[[BUSINESSID]]</p><p>For further information please raise a SNOW ticket for the assignment group GLBETFNDDPIPAASINC</p><p>This is a system-generated email. Please do not reply to this message.</p>" replace "[[BUSINESSID]]" with (attributes.properties.updatefileName),
+	"ContentType": "text/html"
+}]]></ee:set-payload>
+						</ee:message>
+					</ee:transform>
+					<anypoint-mq:publish doc:name="publish-to-standardQueue" doc:id="593be41e-6738-45c9-b536-bb6047ae5883" config-ref="proc-mobility-mapt-sites-error-queue-anypoint-mq-config" destination="${errorNotifMQ.standardQueue}"/>
+					<anypoint-mq:ack doc:name="Ack" doc:id="426cb6b9-9468-42be-a0bd-248ec3ac0a3f" config-ref="proc-mobility-mapt-sites-app-anypoint-mq-config" ackToken="#[vars.ackToken]" />
+					<error-handler >
+						<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="29037496-51e2-4ec5-b176-307086292ab3" type="ANY">
+							<ee:transform doc:name="Transform Message" doc:id="d1fd93f5-1173-42e8-960e-da7e3d9663ac" >
+								<ee:message >
+									<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"fromEmail": vars.additionalLogEmailInfo.fromEmail,
+	"toEmail": vars.additionalLogEmailInfo.To,
+	"subject": upper(vars.additionalLogEmailInfo.Env) ++ "- MuleSoft Notification- " ++ app.name ++ " MAPT update",
+	"emailBody": "<p>Dear Users,</p><p>Please find  below error Notification for data creation after retrieved from error queue.</p><p>[[BUSINESSID]]</p><p>For further information please raise a SNOW ticket for the assignment group GLBETFNDDPIPAASINC</p><p>This is a system-generated email. Please do not reply to this message.</p>" replace "[[BUSINESSID]]" with (error.detailedDescription),
+	"ContentType": "text/html"
+}]]></ee:set-payload>
+								</ee:message>
+							</ee:transform>
+							<anypoint-mq:publish doc:name="publish-to-standardQueue" doc:id="d9c60582-b4e6-4e90-81a6-9805f0ea4389" config-ref="errornotif-queue-anypoint-mq-config" destination="${errorNotifMQ.standardQueue}"/>
+							<anypoint-mq:nack doc:name="Nack" doc:id="afaf79da-d735-4ce0-a240-186b2f126192" config-ref="proc-mobility-mapt-sites-app-anypoint-mq-config" ackToken="#[vars.ackToken]" />
+						</on-error-continue>
+					</error-handler>
+				</try>
+			</when>
+			<otherwise >
+				<ee:transform doc:name="set-mapt-final-payload" doc:id="986c07a8-d0a8-4200-b673-6ca6dc79aa3d">
+<ee:message>
+</ee:message>
+<ee:variables>
+					<ee:set-variable variableName="createcsv"><![CDATA["/applicationsnapshots/" ++ "MDMSiteDataMDMData" ++ "_" ++ now() as DateTime as String{format:"yyyy-MM-dd'T'hh-mm-ss-ms"} ++ "@Global_MDM_SiteInfo@Actual@2019_01@RA.csv/contents?extDirPath=inbox%5Cbatches%5Copenbatch%5COB_MDM_Site_Data%5C"]]></ee:set-variable>
+					<ee:set-variable variableName="updatecsv"><![CDATA["/applicationsnapshots/" ++ "MDMSiteDataMDMUpdate" ++  "_" ++  now() as DateTime as String{format:"yyyy-MM-dd'T'hh-mm-ss-ms"}  ++ "@MetaData_Site@Actual@2019_01@RA.csv/contents?extDirPath=inbox%5Cbatches%5Copenbatch%5COB_MDM_Site_Update%5C"
+]]></ee:set-variable>
+						<ee:set-variable variableName="actualPayload" ><![CDATA[%dw 2.0
+output application/csv
+---
+payload]]></ee:set-variable>
+
+
+
+</ee:variables>
+</ee:transform>
+				<try doc:name="Try" doc:id="b63f0d55-43b7-4c9d-a62a-a93e4e643c13" >
+					<http:request method="POST" doc:name="mapt-updateCSV-request" doc:id="30d5a5f7-701d-4a4e-b2c0-8fa0aad45434" config-ref="mapt-http-request-config" path="#[vars.updatecsv]">
+						<http:body ><![CDATA[#[vars.actualPayload]]]></http:body>
+						<http:headers><![CDATA[#[output application/java
+---
+{
+"Content-Type" : "application/octet-stream"
+}]]]></http:headers>
+					</http:request>
+					<error-handler >
+						<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="a4849d04-cdbb-4d4f-b9d7-542d24fdbb42" type="ANY">
+							<set-variable value='#["true"]' doc:name="Set Variable" doc:id="6298288e-17ea-46d8-b615-1256372ae306" variableName="maptError"/>
+							<ee:transform doc:name="Transform Message" doc:id="165da53f-e90f-4b95-a33f-629b4e33d3e1">
+								<ee:message>
+									<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"fromEmail": vars.additionalLogEmailInfo.fromEmail,
+	"toEmail": vars.additionalLogEmailInfo.To,
+	"subject": upper(vars.additionalLogEmailInfo.Env) ++ "- MuleSoft Notification- " ++ app.name ++ " MAPT update",
+	"emailBody": "<p>Dear Users,</p><p>Please find  below error Notification for update creation after retrieved from error queue.</p><p>[[BUSINESSID]]</p><p>For further information please raise a SNOW ticket for the assignment group GLBETFNDDPIPAASINC</p><p>This is a system-generated email. Please do not reply to this message.</p>" replace "[[BUSINESSID]]" with (error.detailedDescription),
+	"ContentType": "text/html"
+}]]></ee:set-payload>
+								</ee:message>
+							</ee:transform>
+							<anypoint-mq:publish doc:name="publish-to-standardQueue" doc:id="a6709c60-b4ac-49d3-9985-7502ac5350ad" config-ref="errornotif-queue-anypoint-mq-config" destination="${errorNotifMQ.standardQueue}"/>
+							<anypoint-mq:nack doc:name="Nack" doc:id="7b35384f-1092-4418-8115-0b617e9b398b" config-ref="proc-mobility-mapt-sites-app-anypoint-mq-config" ackToken="#[vars.ackToken]" />
+						</on-error-continue>
+					</error-handler>
+				</try>
+				<choice doc:name="Choice" doc:id="87f88b37-13ba-4303-8f95-913926af19a8" >
+					<when expression='#[vars.maptError == "false" or vars.maptError == null]'>
+						<try doc:name="Try" doc:id="81fd40d6-9a50-4513-bfd6-ecec3d4052a3" >
+							<http:request method="POST" doc:name="mapt-createCSV-request" doc:id="e80fd770-11d8-4bfe-8e79-b65e76853494" config-ref="mapt-http-request-config" path="#[vars.createcsv]">
+<http:body ><![CDATA[#[vars.actualPayload]]]></http:body>
+								<http:headers><![CDATA[#[output application/java
+---
+{
+"Content-Type" : "application/octet-stream"
+}]]]></http:headers>
+</http:request>
+							<anypoint-mq:ack doc:name="Ack" doc:id="6c36449c-9085-46cc-82f5-4f508c2740cf" config-ref="proc-mobility-mapt-sites-app-anypoint-mq-config" ackToken="#[vars.ackToken]"/>
+							<error-handler >
+								<on-error-continue enableNotifications="true" logException="true" doc:name="On Error Continue" doc:id="afa783a5-fcf7-4c40-9244-45a7d53b894d" type="ANY">
+									<set-variable value='#["true"]' doc:name="Set Variable" doc:id="f14fbf51-8d0f-4c77-8a9d-c448b0e27483" variableName="maptError"/>
+									<logger level="INFO" doc:name="Logger" doc:id="1cf3ce47-6221-44c1-966e-2e555797a59f" />
+									<anypoint-mq:publish doc:name="Publish" doc:id="fb19d720-0b7a-494a-9231-ab5e34ece102" config-ref="proc-mobility-mapt-sites-error-queue-anypoint-mq-config" destination="${mq.errorqueue.queue}">
+									<anypoint-mq:body ><![CDATA[#[vars.actualPayload]]]></anypoint-mq:body>
+										<anypoint-mq:properties ><![CDATA[#[output application/java
+---
+{		
+	"updatefileName":vars.createcsv
+}]]]></anypoint-mq:properties>
+								</anypoint-mq:publish>
+									<anypoint-mq:ack doc:name="Ack" doc:id="278743e0-a89f-4ffa-a124-2fdca2bd84b7" config-ref="proc-mobility-mapt-sites-app-anypoint-mq-config" ackToken="#[vars.ackToken]" />
+									<ee:transform doc:name="Transform Message" doc:id="c4f19759-66d4-4656-b8a6-19f2f1494703" >
+										<ee:message >
+											<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"fromEmail": vars.additionalLogEmailInfo.fromEmail,
+	"toEmail": vars.additionalLogEmailInfo.To,
+	"subject": upper(vars.additionalLogEmailInfo.Env) ++ "- MuleSoft Notification- " ++ app.name ++ " MAPT update",
+	"emailBody": "<p>Dear Users,</p><p>Please find  below error Notification for create creation after retrieved from error queue.</p><p>[[BUSINESSID]]</p><p>For further information please raise a SNOW ticket for the assignment group GLBETFNDDPIPAASINC</p><p>This is a system-generated email. Please do not reply to this message.</p>" replace "[[BUSINESSID]]" with (error.detailedDescription),
+	"ContentType": "text/html"
+}]]></ee:set-payload>
+										</ee:message>
+									</ee:transform>
+									<anypoint-mq:publish doc:name="Publish" doc:id="70871a36-af6e-468b-b95e-24a8ee1d286f" config-ref="proc-mobility-mapt-sites-error-queue-anypoint-mq-config" destination="${errorNotifMQ.standardQueue}"/>
+								</on-error-continue>
+							</error-handler>
+						</try>
+						<choice doc:name="Choice" doc:id="2f57f403-c441-4e2a-9ed6-ee4ac6d567b4">
+					<when expression="#[vars.maptError == false]">
+						<ee:transform doc:name="Transform Message" doc:id="5fdfe064-4982-4f3c-a86a-a32eb4fb9085">
+							<ee:message>
+								<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"fromEmail": vars.additionalLogEmailInfo.fromEmail,
+	"toEmail": vars.additionalLogEmailInfo.To,
+	"subject": upper(vars.additionalLogEmailInfo.Env) ++ "- MuleSoft Notification- " ++ app.name ++ " MAPT update",
+	"emailBody": "<p>Dear Users,</p><p>Successfully created both the update and data creation files after retrieved from error queue.</p><p>[[BUSINESSID]]</p><p>For further information please raise a SNOW ticket for the assignment group GLBETFNDDPIPAASINC</p><p>This is a system-generated email. Please do not reply to this message.</p>" replace "[[BUSINESSID]]" with (updatecsvfileName:vars.updatecsv ++ "&" ++ createcsvfileName:vars.createcsv ),
+	"ContentType": "text/html"
+}]]></ee:set-payload>
+							</ee:message>
+						</ee:transform>
+						<anypoint-mq:publish doc:name="Publish" doc:id="0419648d-75f1-4d20-bf7e-adf5c4ab1925" config-ref="proc-mobility-mapt-sites-error-queue-anypoint-mq-config" destination="${errorNotifMQ.standardQueue}" />
+					</when>
+				</choice>
+					</when>
+					<otherwise >
+						<logger level="INFO" doc:name="Logger" doc:id="defef891-d435-438b-ad5c-2d3bb667505f" />
+					</otherwise>
+				</choice>
+			</otherwise>
+		</choice>
+		<flow-ref doc:name="log-response-returned" doc:id="3c76b359-ac0d-48f9-a753-d3831b7c66ba" name="log-response-returned"/>
+	</flow>
+	<flow name="proc-mobility-mapt-sites-retryqueue-Flow" doc:id="d3b01c77-fa66-4ec5-9e1f-f9f65dadb0c0" maxConcurrency="${subscriber.main.maxConcurrency}">
+		<anypoint-mq:subscriber doc:name="Subscriber" doc:id="db794d5c-bb4d-4a9a-bfff-9ef54c563d34" config-ref="proc-mobility-mapt-sites-app-anypoint-mq-config" destination="${mq.retryqueue}" acknowledgementMode="MANUAL" acknowledgementTimeout="${mq.ackTimeout}" acknowledgementTimeoutUnit="MINUTES">
+			<anypoint-mq:subscriber-type >
+				<anypoint-mq:prefetch maxLocalMessages="${subscriber.main.maxLocalMessages}" />
+			</anypoint-mq:subscriber-type>
+		</anypoint-mq:subscriber>
+		<flow-ref doc:name="log-request-received" doc:id="d3b2904f-9b74-4957-9068-9189a0f0e8da" name="log-request-received"/>
+		<logger level="INFO" doc:name="Logger" doc:id="baec7921-3109-4f9e-8b11-c14e330204a0" message="#[%dw 2.0
+output application/json
+---
+{
+	retryProcessing: payload,
+	correlationId: correlationId
+}]"/>
+		<set-variable value="#[%dw 2.0
+output application/java
+---
+attributes.ackToken]" doc:name="Set Variable" doc:id="db58d1ed-99eb-432f-8291-9cf20631e736" variableName="ackToken"/>
+		<flow-ref doc:name="mdm-site-mapt-data-aggregarte-folw" doc:id="41ddc687-d7aa-4637-9df3-f28390c9382d" name="mdm-site-mapt-data-aggregarte-folw"/>
+		<logger level="INFO" doc:name="Logger" doc:id="dc637cb4-876b-46d5-af33-2bdf8c5b485a" message="Processed the batch message from retry queue succesfully"/>
+		<anypoint-mq:ack doc:name="Ack" doc:id="0da5ab79-4c7d-405b-804c-041f11083c4f" config-ref="proc-mobility-mapt-sites-app-anypoint-mq-config" ackToken="#[vars.ackToken]"/>
+		<flow-ref doc:name="log-response-returned" doc:id="0b4bef76-9987-4d84-83d1-af27b7f5df1b" name="log-response-returned"/>
+	</flow>
+
+
+
+</mule>
